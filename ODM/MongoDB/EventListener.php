@@ -8,10 +8,14 @@
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
  */
+
 namespace Cubiche\Infrastructure\Identity\Doctrine\ODM\MongoDB;
 
+use Cubiche\Infrastructure\Doctrine\ODM\MongoDB\Event\RegisterDriverMetadataEventArgs;
+use Cubiche\Infrastructure\Identity\Doctrine\ODM\MongoDB\Mapping\Driver\XmlDriver;
 use Cubiche\Infrastructure\Identity\Doctrine\ODM\MongoDB\Types\DynamicIdType;
 use Doctrine\ODM\MongoDB\Event\LoadClassMetadataEventArgs;
+use Doctrine\ODM\MongoDB\Mapping\ClassMetadata;
 use Doctrine\ODM\MongoDB\Mapping\MappingException;
 use Doctrine\ODM\MongoDB\Types\Type;
 
@@ -19,37 +23,44 @@ use Doctrine\ODM\MongoDB\Types\Type;
  * Event Listener Class.
  *
  * @author Karel Osorio Ramírez <osorioramirez@gmail.com>
+ * @author Ivannis Suárez Jerez <ivannis.suarez@gmail.com>
  */
 class EventListener
 {
+    /**
+     * @param RegisterDriverMetadataEventArgs $eventArgs
+     */
+    public function registerDriverMetadata(RegisterDriverMetadataEventArgs $eventArgs)
+    {
+        $eventArgs->driverFactory()->registerXmlDriver(XmlDriver::class);
+    }
+
     /**
      * @param LoadClassMetadataEventArgs $eventArgs
      */
     public function postLoadClassMetadata(LoadClassMetadataEventArgs $eventArgs)
     {
-        /** @var \Doctrine\ODM\MongoDB\Mapping\ClassMetadata $classMetadata */
-        $classMetadata = $eventArgs->getClassMetadata();
-        foreach ($classMetadata->fieldMappings as $fieldName => $mapping) {
-            if (!isset($mapping['type'])) {
-                continue;
-            }
+        $this->checkIdType($eventArgs->getClassMetadata());
+    }
 
-            if ($mapping['type'] === 'Identifier') {
-                if (isset($mapping['target'])) {
-                    $type = str_replace('\\', '.', $mapping['target']);
-                    if (!Type::hasType($type)) {
-                        Type::registerType($type, DynamicIdType::class);
-                        Type::getType($type)->setTargetClass($mapping['target']);
-                    }
-                    $classMetadata->fieldMappings[$fieldName]['type'] = $type;
-                    unset($classMetadata->fieldMappings[$fieldName]['target']);
-                } else {
-                    throw new MappingException(\sprintf(
-                        'The target option of Identifier type is missing in %s::%s mapping.',
-                        $classMetadata->name,
-                        $fieldName
-                    ));
+    /**
+     * @param ClassMetadata $classMetadata
+     *
+     * @throws MappingException
+     */
+    protected function checkIdType(ClassMetadata $classMetadata)
+    {
+        foreach ($classMetadata->fieldMappings as $fieldName => $mapping) {
+            if (isset($mapping['cubiche:id'])) {
+                $idMapping = $mapping['cubiche:id'];
+
+                $type = str_replace('\\', '.', $idMapping['type']);
+                if (!Type::hasType($type)) {
+                    Type::registerType($type, DynamicIdType::class);
+                    Type::getType($type)->setTargetClass($idMapping['type']);
                 }
+
+                $classMetadata->fieldMappings[$fieldName]['type'] = $type;
             }
         }
     }
